@@ -3,10 +3,17 @@ use std::{env, process::Command, time::Duration};
 use tokio::time;
 
 struct Config {
-    interval: Duration,
-    on_threshold: f32,
-    off_threshold: f32,
+    /// The gpio pin to which the fan is connected (default 17).
     gpio_pin: u32,
+
+    /// The interval duration in seconds (int) to check the temperature (default 15).
+    interval: u64,
+
+    /// The temperature passes which the fan is turned on (default 60).
+    on_threshold: f32,
+
+    /// The temperature below which the fan is turned off (default 50).
+    off_threshold: f32,
 }
 
 impl Config {
@@ -16,7 +23,6 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .filter(|v| *v > 0) // time::interval panics on zero duration
             .unwrap_or(15);
-        let interval = Duration::from_secs(interval);
 
         let gpio_pin = env::var("GPIO_PIN")
             .ok()
@@ -55,7 +61,7 @@ async fn main() {
         gpio_pin,
     } = Config::load();
 
-    let mut interval = time::interval(period);
+    let mut interval = time::interval(Duration::from_secs(period));
 
     loop {
         interval.tick().await;
