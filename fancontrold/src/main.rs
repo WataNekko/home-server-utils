@@ -91,19 +91,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         gpio_pin
     );
 
+    let mut do_if_overheat_change_exceeds_value = {
+        let mut last_overheat_amount: Option<f32> = None;
+
+        move |temp: f32, max_change: f32, f: fn(f32)| {
+            let is_not_overheating = temp < on_threshold;
+
+            if is_not_overheating {
+                if last_overheat_amount.is_some() {
+                    last_overheat_amount = None;
+                }
+                return;
+            }
+
+            let overheat_amount = temp - on_threshold;
+            let overheat_change = last_overheat_amount.map(|v| (v - overheat_amount).abs());
+            let exceeded_max_change = overheat_change.filter(|v| *v <= max_change).is_none();
+
+            if exceeded_max_change {
+                last_overheat_amount = Some(overheat_amount);
+                f(temp);
+            }
+        }
+    };
+
     loop {
         interval.tick().await;
 
         let temp = read_temperature()?;
 
-        println!("{}", temp);
         if fan_pin.is_set_low() && temp > on_threshold {
             fan_pin.set_high();
-            println!("on");
         } else if fan_pin.is_set_high() && temp < off_threshold {
             fan_pin.set_low();
-            println!("off");
+
+            println!("😌: {}'C", temp);
         }
+
+        do_if_overheat_change_exceeds_value(temp, 5.0, |t| println!("🥵: {}'C", t));
     }
 }
 
