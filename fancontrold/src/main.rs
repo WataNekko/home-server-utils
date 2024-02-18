@@ -72,11 +72,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         interval: period,
         on_threshold,
         off_threshold,
-        gpio_pin: fan_pin,
+        gpio_pin,
     } = Config::load()?;
 
     let mut interval = time::interval(Duration::from_secs(period));
-    let mut fan_pin = Gpio::new()?.get(fan_pin)?.into_output();
+    let mut fan_pin = Gpio::new()?.get(gpio_pin)?.into_output();
+
+    print!(
+        "Monitoring cpu temperature with `vcgencmd measure_temp` every {} seconds (INTERVAL environment variable).\n",
+        period
+    );
+    print!(
+        "Turns on fan if over {}'C (ON_THRESHOLD env), off if below {}'C (OFF_THRESHOLD env).\n",
+        on_threshold, off_threshold
+    );
+    println!(
+        "Using GPIO pin {} to control the fan (GPIO_PIN env).",
+        gpio_pin
+    );
 
     loop {
         interval.tick().await;
