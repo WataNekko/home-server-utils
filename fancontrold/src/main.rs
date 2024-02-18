@@ -1,6 +1,7 @@
-use std::{env, error::Error, process::Command, time::Duration};
+use std::{env, process::Command, time::Duration};
 
 use rppal::gpio::Gpio;
+use thiserror::Error;
 use tokio::time;
 
 struct Config {
@@ -18,7 +19,7 @@ struct Config {
 }
 
 impl Config {
-    fn load() -> Config {
+    fn load() -> Result<Config, ConfigError> {
         let interval = env::var("INTERVAL")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -41,26 +42,38 @@ impl Config {
             .unwrap_or(50.0);
 
         if off_threshold >= on_threshold {
-            panic!("OFF_THRESHOLD must be less than ON_THRESHOLD");
+            return Err(ConfigError::InvalidThresholdRange {
+                off_threshold,
+                on_threshold,
+            });
         }
 
-        Config {
+        Ok(Config {
             interval,
             on_threshold,
             off_threshold,
             gpio_pin,
-        }
+        })
     }
 }
 
+#[derive(Error, Debug)]
+enum ConfigError {
+    #[error("OFF_THRESHOLD must be less than ON_THRESHOLD, but is {off_threshold} and {on_threshold} respectively")]
+    InvalidThresholdRange {
+        off_threshold: f32,
+        on_threshold: f32,
+    },
+}
+
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Config {
         interval: period,
         on_threshold,
         off_threshold,
         gpio_pin: fan_pin,
-    } = Config::load();
+    } = Config::load()?;
 
     let mut interval = time::interval(Duration::from_secs(period));
     let mut fan_pin = Gpio::new()?.get(fan_pin)?.into_output();
@@ -68,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         interval.tick().await;
 
-        let temp = read_temperature();
+        let temp = read_temperature()?;
 
         println!("{}", temp);
         if fan_pin.is_set_low() && temp > on_threshold {
@@ -81,16 +94,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn read_temperature() -> f32 {
-    let output = Command::new("vcgencmd")
-        .arg("measure_temp")
-        .output()
-        .expect("Temperature read command should not have failed");
+#[derive(Error, Debug)]
+enum ReadTempError {
+    #[error("reading failed: {0}")]
+    CommandOutputError(#[from] std::io::Error),
+    #[error("expected format is `temp=<num>'C\\n`, instead is `{0}`")]
+    ParseError(String),
+}
+
+fn read_temperature() -> Result<f32, ReadTempError> {
+    let output = Command::new("vcgencmd").arg("measure_temp").output()?;
     let output = String::from_utf8_lossy(&output.stdout);
 
     let temp_str = &output["temp=".len()..(output.len() - "'C\n".len())];
 
     temp_str
         .parse()
-        .expect("Temperature reading should be in the format `temp=<num>'C\\n`")
+        .map_err(|_| ReadTempError::ParseError(output.into_owned()))
 }
