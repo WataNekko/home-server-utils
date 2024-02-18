@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fan_pin = Gpio::new()?.get(gpio_pin)?.into_output();
 
     print!(
-        "Monitoring cpu temperature with `vcgencmd measure_temp` every {} seconds (INTERVAL environment variable).\n",
+        "⚙️ Monitoring cpu temperature with `vcgencmd measure_temp` every {} seconds (INTERVAL environment variable).\n",
         period
     );
     print!(
