@@ -1,0 +1,10 @@
+[Unit]
+Description=CPU cooling fan control service
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/fancontrold
+
+[Install]
+WantedBy=multi-user.target

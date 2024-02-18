@@ -17,3 +17,7 @@ Running with `sudo` may be required if the user does not have GPIO permission. E
 ```
 cargo build && sudo ./target/debug/fancontrold
 ```
+
+## Service
+
+A systemd service file at [fancontrold.service](fancontrold.service) is ready to be installed (e.g., `sudo cp ./fancontrold.service /usr/lib/systemd/system/`). Then, the service can be enabled to start at boot with `sudo systemctl enable fancontrold.service`. Note that the built `fancontrold` binary should first be installed to `/usr/bin/`.
