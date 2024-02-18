@@ -1,10 +1,11 @@
-use std::{env, process::Command, time::Duration};
+use std::{env, error::Error, process::Command, time::Duration};
 
+use rppal::gpio::Gpio;
 use tokio::time;
 
 struct Config {
     /// The gpio pin to which the fan is connected (default 17).
-    gpio_pin: u32,
+    gpio_pin: u8,
 
     /// The interval duration in seconds (int) to check the temperature (default 15).
     interval: u64,
@@ -53,28 +54,30 @@ impl Config {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     let Config {
         interval: period,
         on_threshold,
         off_threshold,
-        gpio_pin,
+        gpio_pin: fan_pin,
     } = Config::load();
 
     let mut interval = time::interval(Duration::from_secs(period));
+    let mut fan_pin = Gpio::new()?.get(fan_pin)?.into_output();
 
     loop {
         interval.tick().await;
 
         let temp = read_temperature();
 
-        print!("{} ", temp);
-        if temp > on_threshold {
-            print!("on");
-        } else if temp < off_threshold {
-            print!("off");
+        println!("{}", temp);
+        if fan_pin.is_set_low() && temp > on_threshold {
+            fan_pin.set_high();
+            println!("on");
+        } else if fan_pin.is_set_high() && temp < off_threshold {
+            fan_pin.set_low();
+            println!("off");
         }
-        println!();
     }
 }
 
