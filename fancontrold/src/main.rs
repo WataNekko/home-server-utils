@@ -1,45 +1,61 @@
-use std::{env, process::Command, time::Duration};
+use std::{process::Command, time::Duration};
 
+use confy::ConfyError;
 use rppal::gpio::Gpio;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::time;
 
+#[derive(Debug, Serialize, Deserialize)]
 struct Config {
-    /// The gpio pin to which the fan is connected (default 17).
+    /// The gpio pin to which the fan is connected.
     gpio_pin: u8,
 
-    /// The interval duration in seconds (int) to check the temperature (default 15).
+    /// The interval duration in seconds (int) to check the temperature.
     interval: u64,
 
-    /// The temperature passes which the fan is turned on (default 60).
+    /// The temperature passes which the fan is turned on.
     on_threshold: f32,
 
-    /// The temperature below which the fan is turned off (default 50).
+    /// The temperature below which the fan is turned off.
     off_threshold: f32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            gpio_pin: 17,
+            interval: 15,
+            on_threshold: 60.0,
+            off_threshold: 50.0,
+        }
+    }
 }
 
 impl Config {
     fn load() -> Result<Config, ConfigError> {
-        let interval = env::var("INTERVAL")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .filter(|v| *v > 0) // time::interval panics on zero duration
-            .unwrap_or(15);
+        #[cfg(feature = "home_config")]
+        {
+            confy::load::<Self>(env!("CARGO_PKG_NAME"), "config")?.validated()
+        }
 
-        let gpio_pin = env::var("GPIO_PIN")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(17);
+        #[cfg(not(feature = "home_config"))]
+        {
+            const CONFIG_PATH: &str = concat!("/etc/", env!("CARGO_PKG_NAME"), "/config.toml");
+            confy::load_path::<Self>(CONFIG_PATH)?.validated()
+        }
+    }
 
-        let on_threshold = env::var("ON_THRESHOLD")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(60.0);
+    fn validated(mut self) -> Result<Self, ConfigError> {
+        if self.interval == 0 {
+            self.interval = Self::default().interval;
+        }
 
-        let off_threshold = env::var("OFF_THRESHOLD")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(50.0);
+        let Self {
+            on_threshold,
+            off_threshold,
+            ..
+        } = self;
 
         if off_threshold >= on_threshold {
             return Err(ConfigError::InvalidThresholdRange {
@@ -48,22 +64,19 @@ impl Config {
             });
         }
 
-        Ok(Config {
-            interval,
-            on_threshold,
-            off_threshold,
-            gpio_pin,
-        })
+        Ok(self)
     }
 }
 
 #[derive(Error, Debug)]
 enum ConfigError {
-    #[error("OFF_THRESHOLD must be less than ON_THRESHOLD, but is {off_threshold} and {on_threshold} respectively")]
+    #[error("`off_threshold` must be less than `on_threshold`, but is {off_threshold} and {on_threshold} respectively")]
     InvalidThresholdRange {
         off_threshold: f32,
         on_threshold: f32,
     },
+    #[error("{0}")]
+    ConfyError(#[from] ConfyError),
 }
 
 #[tokio::main(flavor = "current_thread")]
